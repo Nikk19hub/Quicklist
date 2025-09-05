@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuickList — To‑Do</title>
+  <meta name="description" content="A fast, offline‑ready to‑do list with localStorage and keyboard shortcuts."/>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' rx='24' fill='%2300a86b'/%3E%3Cpath d='M30 63l16 16 44-44' fill='none' stroke='white' stroke-width='12' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <style>
+    :root{
+      --bg:#0b0e11; --panel:#12171d; --muted:#8a94a6; --text:#e8eef7; --accent:#34d399; --accent-2:#22c55e; --danger:#ef4444;
+      --ring: rgba(52,211,153,0.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 20% -10%, #15202b 10%, transparent 60%) no-repeat, var(--bg);
+      color:var(--text);
+      display:flex; align-items:center; justify-content:center; padding:32px;
+    }
+    .app{
+      width:min(960px,100%);
+      background:linear-gradient(180deg, rgba(255,255,255,0.04), transparent 30%) , var(--panel);
+      border:1px solid rgba(255,255,255,0.06);
+      border-radius:20px; box-shadow:0 10px 40px rgba(0,0,0,.35);
+      padding:22px;
+    }
+    header{display:flex; gap:12px; align-items:center; justify-content:space-between; margin-bottom:14px}
+    h1{margin:0; font-size:22px; letter-spacing:.5px; display:flex; align-items:center; gap:10px}
+    h1 .dot{width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 6px var(--ring)}
+    .hint{color:var(--muted); font-size:13px}
+    .row{display:flex; gap:10px; flex-wrap:wrap}
+    .grow{flex:1}
+    input[type="text"], input[type="date"], select{
+      background:#0f141a; color:var(--text); border:1px solid rgba(255,255,255,0.1);
+      border-radius:12px; padding:12px 14px; outline:none; width:100%;
+    }
+    input[type="text"]:focus, input[type="date"]:focus, select:focus{border-color:var(--accent); box-shadow:0 0 0 4px var(--ring)}
+    button{
+      background:var(--accent); color:#052e1f; border:0; padding:12px 14px; border-radius:12px; font-weight:700; cursor:pointer;
+    }
+    button.ghost{background:transparent; color:var(--text); border:1px solid rgba(255,255,255,0.12)}
+    button.danger{background:var(--danger); color:#fff}
+    .toolbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin:14px 0}
+    .filters{display:flex; gap:6px; flex-wrap:wrap}
+    .chip{padding:8px 10px; border-radius:999px; border:1px solid rgba(255,255,255,0.12); cursor:pointer; font-size:13px; color:var(--muted)}
+    .chip[data-active="true"]{border-color:var(--accent); color:var(--text); background:rgba(52,211,153,0.12)}
+    ul{list-style:none; margin:0; padding:0; display:grid; gap:8px}
+    .item{
+      display:grid; grid-template-columns: auto 1fr auto; gap:10px; align-items:center;
+      padding:12px; border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:#0f141a;
+    }
+    .title{display:flex; align-items:center; gap:10px}
+    .title input[type="checkbox"]{width:18px; height:18px; accent-color:var(--accent-2); cursor:pointer}
+    .text{font-size:15px}
+    .text.done{text-decoration:line-through; color:#8792a6}
+    .meta{display:flex; gap:8px; color:#9fb0c8; font-size:12px; flex-wrap:wrap}
+    .badge{padding:4px 8px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px dashed rgba(255,255,255,0.12)}
+    .priority-low{color:#7dd3fc}
+    .priority-medium{color:#fde68a}
+    .priority-high{color:#fca5a5}
+    .actions{display:flex; gap:6px}
+    .empty{color:var(--muted); text-align:center; padding:24px 8px; border:1px dashed rgba(255,255,255,0.1); border-radius:14px}
+    .search{min-width:220px}
+    .kbd{font:12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#0b0e11; border:1px solid rgba(255,255,255,0.15); padding:2px 6px; border-radius:6px; color:#b6c2d4}
+    @media (max-width:640px){ .meta{display:none} }
+  </style>
+</head>
+<body>
+  <div class="app" id="app" role="application">
+    <header>
+      <h1><span class="dot"></span> QuickList <span class="hint">— To‑Do</span></h1>
+      <div class="hint">Press <span class="kbd">Enter</span> to add · <span class="kbd">/</span> search · <span class="kbd">E</span> edit</div>
+    </header>
+
+    <div class="row" aria-label="Add task form">
+      <input id="task-input" class="grow" type="text" placeholder="What needs to be done?" autocomplete="off" />
+      <input id="due-input" type="date" />
+      <select id="priority-input" aria-label="Priority">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+      </select>
+      <button id="add-btn" title="Add task">Add</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="filters" role="tablist" aria-label="Filters">
+        <div class="chip" data-filter="all" data-active="true" role="tab" tabindex="0">All</div>
+        <div class="chip" data-filter="active" role="tab" tabindex="0">Active</div>
+        <div class="chip" data-filter="completed" role="tab" tabindex="0">Completed</div>
+        <div class="chip" data-filter="today" role="tab" tabindex="0">Due Today</div>
+        <div class="chip" data-filter="overdue" role="tab" tabindex="0">Overdue</div>
+      </div>
+      <div class="row">
+        <input id="search" class="search" type="text" placeholder="Search (press /)" />
+        <button id="export-btn" class="ghost" title="Export tasks to JSON">Export</button>
+        <button id="import-btn" class="ghost" title="Import tasks from JSON">Import</button>
+        <button id="clear-completed-btn" class="ghost" title="Clear completed">Clear Completed</button>
+      </div>
+    </div>
+
+    <ul id="list" aria-live="polite" aria-label="Tasks"></ul>
+    <div id="empty" class="empty" hidden>No tasks yet. Add your first one above!</div>
+  </div>
+
+<script>
+(() => {
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const uid = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  const STORAGE_KEY = "quicklist.tasks.v1";
+
+  /** @type {Array<{id:string,text:string,done:boolean,due:string|null,priority:'low'|'medium'|'high',created:number,updated:number}>} */
+  let state = load();
+
+  const list = $("#list");
+  const empty = $("#empty");
+  const addBtn = $("#add-btn");
+  const taskInput = $("#task-input");
+  const dueInput = $("#due-input");
+  const priorityInput = $("#priority-input");
+  const search = $("#search");
+
+  const filters = { mode: "all", query: "" };
+
+  function load() {
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      if (!s) return [];
+      const data = JSON.parse(s);
+      return Array.isArray(data) ? data : [];
+    } catch { return []; }
+  }
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function addTask(text, due, priority) {
+    if (!text || !text.trim()) return;
+    const now = Date.now();
+    state.unshift({ id: uid(), text: text.trim(), done: false, due: due || null, priority: priority || "medium", created: now, updated: now });
+    save();
+    render();
+  }
+
+  function updateTask(id, patch) {
+    const i = state.findIndex(t => t.id === id);
+    if (i === -1) return;
+    state[i] = { ...state[i], ...patch, updated: Date.now() };
+    save();
+    render();
+  }
+
+  function deleteTask(id) {
+    state = state.filter(t => t.id !== id);
+    save();
+    render();
+  }
+
+  function clearCompleted() {
+    state = state.filter(t => !t.done);
+    save();
+    render();
+  }
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "quicklist-tasks.json"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  }
+
+  function importJSON() {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "application/json";
+    input.onchange = async () => {
+      const file = input.files?.[0]; if (!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        if (Array.isArray(data)) {
+          state = data; save(); render();
+        } else alert("Invalid JSON format.");
+      } catch { alert("Could not parse JSON."); }
+    };
+    input.click();
+  }
+
+  function isToday(dateStr) {
+    const d = new Date(dateStr);
+    const t = new Date();
+    return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+  }
+  function isOverdue(dateStr) {
+    const d = new Date(dateStr);
+    const t = new Date(); t.setHours(0,0,0,0);
+    return d < t;
+  }
+
+  function applyFilters(tasks) {
+    let items = tasks;
+    if (filters.query) {
+      const q = filters.query.toLowerCase();
+      items = items.filter(t => t.text.toLowerCase().includes(q));
+    }
+    switch (filters.mode) {
+      case "active": items = items.filter(t => !t.done); break;
+      case "completed": items = items.filter(t => t.done); break;
+      case "today": items = items.filter(t => t.due && isToday(t.due)); break;
+      case "overdue": items = items.filter(t => t.due && isOverdue(t.due)); break;
+    }
+    // sort by: not done first, then by priority, then by date asc, then updated desc
+    const pRank = { high: 0, medium: 1, low: 2 };
+    items.sort((a,b) => Number(a.done) - Number(b.done) || pRank[a.priority]-pRank[b.priority] || (a.due||"").localeCompare(b.due||"") || b.updated - a.updated);
+    return items;
+  }
+
+  function badgeFor(task) {
+    const due = task.due ? new Date(task.due) : null;
+    const dueStr = task.due ? due.toLocaleDateString(undefined,{month:"short", day:"numeric"}) : "No due";
+    const overdue = task.due && isOverdue(task.due);
+    const today = task.due && isToday(task.due);
+    const dueBadge = `<span class="badge ${overdue?"priority-high":today?"priority-medium":""}" title="Due date">${dueStr}</span>`;
+    const pClass = task.priority === "high" ? "priority-high" : task.priority === "low" ? "priority-low" : "priority-medium";
+    const pLabel = task.priority[0].toUpperCase() + task.priority.slice(1);
+    const pBadge = `<span class="badge ${pClass}" title="Priority">${pLabel}</span>`;
+    return dueBadge + pBadge;
+  }
+
+  function itemTemplate(task) {
+    return `
+      <li class="item" draggable="true" data-id="${task.id}">
+        <div class="title">
+          <input type="checkbox" aria-label="Mark complete" ${task.done?"checked":""} />
+          <div class="text ${task.done?"done":""}" tabindex="0">${escapeHtml(task.text)}</div>
+        </div>
+        <div class="meta">${badgeFor(task)}</div>
+        <div class="actions">
+          <button class="ghost edit-btn" title="Edit (E)">Edit</button>
+          <button class="ghost" data-act="schedule" title="Set due date">Due</button>
+          <button class="danger" data-act="delete" title="Delete">Delete</button>
+        </div>
+      </li>
+    `;
+  }
+
+  function render() {
+    const items = applyFilters([...state]);
+    list.innerHTML = items.map(itemTemplate).join("");
+    empty.hidden = items.length !== 0;
+  }
+
+  function escapeHtml(s){return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+  // Event: add
+  addBtn.addEventListener("click", () => {
+    addTask(taskInput.value, dueInput.value || null, priorityInput.value);
+    taskInput.value = ""; dueInput.value = "";
+    taskInput.focus();
+  });
+  taskInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addBtn.click();
+  });
+
+  // Keyboard shortcuts
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== search) {
+      e.preventDefault(); search.focus();
+    }
+    if (e.key.toLowerCase() === "e" && document.activeElement?.classList.contains("text")) {
+      const li = document.activeElement.closest(".item");
+      li?.querySelector(".edit-btn")?.click();
+    }
+  });
+
+  // Filters
+  $$(".chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      $$(".chip").forEach(c=>c.dataset.active="false");
+      chip.dataset.active="true";
+      filters.mode = chip.dataset.filter;
+      render();
+    });
+  });
+
+  search.addEventListener("input", () => {
+    filters.query = search.value.trim();
+    render();
+  });
+
+  $("#clear-completed-btn").addEventListener("click", clearCompleted);
+  $("#export-btn").addEventListener("click", exportJSON);
+  $("#import-btn").addEventListener("click", importJSON);
+
+  // Delegated item events
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest(".item"); if (!li) return;
+    const id = li.dataset.id;
+    if (e.target.matches('input[type="checkbox"]')) {
+      updateTask(id, { done: e.target.checked });
+    } else if (e.target.matches(".edit-btn")) {
+      const current = state.find(t=>t.id===id); if (!current) return;
+      const text = prompt("Edit task:", current.text);
+      if (text !== null) updateTask(id, { text: text.trim() });
+    } else if (e.target.dataset.act === "delete") {
+      if (confirm("Delete this task?")) deleteTask(id);
+    } else if (e.target.dataset.act === "schedule") {
+      const current = state.find(t=>t.id===id); if (!current) return;
+      const next = prompt("Set due date (YYYY-MM-DD) or leave blank to clear:", current.due || "");
+      if (next !== null) updateTask(id, { due: next.trim() || null });
+    }
+  });
+
+  // Drag & drop reordering
+  let dragId = null;
+  list.addEventListener("dragstart", e => {
+    const li = e.target.closest(".item"); if (!li) return;
+    dragId = li.dataset.id;
+    e.dataTransfer.setData("text/plain", dragId);
+  });
+  list.addEventListener("dragover", e => {
+    if (!dragId) return;
+    e.preventDefault();
+    const over = e.target.closest(".item"); if (!over) return;
+    const dragging = state.find(t => t.id === dragId);
+    const overId = over.dataset.id;
+    if (dragId === overId) return;
+    // reorder in state
+    const a = state.findIndex(t=>t.id===dragId);
+    const b = state.findIndex(t=>t.id===overId);
+    state.splice(b, 0, state.splice(a,1)[0]);
+    render();
+  });
+  list.addEventListener("drop", () => { save(); dragId = null; });
+
+  // Accessibility tweaks
+  list.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.classList.contains("text")) {
+      e.preventDefault();
+      e.target.previousElementSibling.click(); // toggle checkbox
+    }
+  });
+
+  // First render
+  render();
+})(); 
+</script>
+</body>
+</html>
